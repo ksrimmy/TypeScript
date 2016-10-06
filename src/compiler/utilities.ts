@@ -414,8 +414,11 @@ namespace ts {
             ((<ModuleDeclaration>node).name.kind === SyntaxKind.StringLiteral || isGlobalScopeAugmentation(<ModuleDeclaration>node));
     }
 
-    export function isShorthandAmbientModuleSymbol(moduleSymbol: Symbol): boolean {
-        return isShorthandAmbientModule(moduleSymbol.valueDeclaration);
+    //modified this to also include package.json modules
+    //also, can now take non-module symbols (and we'll tell you whether it's a module)
+    /** Either an untyped import or a shorthand ambient module. */
+    export function isUntypedModuleSymbol(moduleSymbol: Symbol): boolean {
+        return !moduleSymbol.valueDeclaration || moduleSymbol.valueDeclaration.kind === SyntaxKind.ModuleDeclaration && isShorthandAmbientModule(moduleSymbol.valueDeclaration);
     }
 
     function isShorthandAmbientModule(node: Node): boolean {

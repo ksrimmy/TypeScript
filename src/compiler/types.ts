@@ -3051,6 +3051,7 @@ namespace ts {
         getDirectories?(path: string): string[];
     }
 
+    //!!!
     export interface ResolvedModule {
         resolvedFileName: string;
         /*
@@ -3060,6 +3061,8 @@ namespace ts {
          * - don't use tripleslash references
          */
         isExternalLibraryImport?: boolean;
+        //doc
+        isUntyped?: boolean;
     }
 
     export interface ResolvedModuleWithFailedLookupLocations {

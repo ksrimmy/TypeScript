@@ -359,6 +359,7 @@ namespace ts {
             const typeReferences: string[] = getAutomaticTypeDirectiveNames(options, host);
 
             if (typeReferences) {
+                //NOTE: we still get here even if typeReferences is empty. Probably should be `if (typeReferences && typeReferences.length)`
                 // This containingFilename needs to match with the one used in managed-side
                 const containingFilename = combinePaths(host.getCurrentDirectory(), "__inferred type names__.ts");
                 const resolutions = resolveTypeReferenceDirectiveNamesWorker(typeReferences, containingFilename);
@@ -1309,8 +1310,10 @@ namespace ts {
                 const moduleNames = map(concatenate(file.imports, file.moduleAugmentations), getTextOfLiteral);
                 const resolutions = resolveModuleNamesWorker(moduleNames, getNormalizedAbsolutePath(file.fileName, currentDirectory));
                 for (let i = 0; i < moduleNames.length; i++) {
+                    debugger;
                     const resolution = resolutions[i];
                     setResolvedModule(file, moduleNames[i], resolution);
+                    //compute this lazily (PR for master)
                     const resolvedPath = resolution ? toPath(resolution.resolvedFileName, currentDirectory, getCanonicalFileName) : undefined;
 
                     // add file to program only if:
@@ -1320,12 +1323,16 @@ namespace ts {
                     // - it's not a top level JavaScript module that exceeded the search max
                     const isFromNodeModulesSearch = resolution && resolution.isExternalLibraryImport;
                     const isJsFileFromNodeModules = isFromNodeModulesSearch && hasJavaScriptFileExtension(resolution.resolvedFileName);
+                    //maybe detect json similarly???
 
                     if (isFromNodeModulesSearch) {
+                        //this is very silly, to set and un-set. Just use an immutable var.
                         currentNodeModulesDepth++;
                     }
 
-                    const elideImport = isJsFileFromNodeModules && currentNodeModulesDepth > maxNodeModulesJsDepth;
+                    //is this right?
+                    const elideImport = isJsFileFromNodeModules && currentNodeModulesDepth > maxNodeModulesJsDepth || resolution && resolution.isUntyped;
+                    //we already calculated elideImport, so that should go first!
                     const shouldAddFile = resolution && !options.noResolve && i < file.imports.length && !elideImport;
 
                     if (elideImport) {
