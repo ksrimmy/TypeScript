@@ -523,13 +523,14 @@ namespace ts {
             failedLookupLocations, supportedExtensions, state);
         let isUntyped = false;
 
+        //the control flow here could be a lot simpler. Use let, not const.
         let isExternalLibraryImport = false;
         if (!resolvedFileName) {
             if (moduleHasNonRelativeName(moduleName)) {
                 if (traceEnabled) {
                     trace(host, Diagnostics.Loading_module_0_from_node_modules_folder, moduleName);
                 }
-                const result = loadModuleFromNodeModules(moduleName, containingDirectory, failedLookupLocations, state, /*checkOneLevel*/ false);
+                const result = loadModuleFromNodeModules(moduleName, containingDirectory, failedLookupLocations, state, /*checkOneLevel*/ false, /*allowUntyped*/ !compilerOptions.noImplicitAny);
                 isExternalLibraryImport = result !== undefined;
                 if (isExternalLibraryImport) {
                     resolvedFileName = result.path;
@@ -632,7 +633,9 @@ namespace ts {
     function loadNodeModuleFromDirectory(extensions: string[], candidate: string, failedLookupLocation: string[], onlyRecordFailures: boolean, state: ModuleResolutionState): ResolvedModuleResult {
         const packageJsonPath = pathToPackageJson(candidate);
         const directoryExists = !onlyRecordFailures && directoryProbablyExists(candidate, state.host);
-        if (directoryExists && state.host.fileExists(packageJsonPath)) {
+        //TODO: control flow could be simpler
+        const packageJsonExists = directoryExists && state.host.fileExists(packageJsonPath);
+        if (packageJsonExists) {
             if (state.traceEnabled) {
                 trace(state.host, Diagnostics.Found_package_json_at_0, packageJsonPath);
             }
@@ -651,8 +654,6 @@ namespace ts {
                     trace(state.host, Diagnostics.package_json_does_not_have_types_field);
                 }
             }
-
-            return { isUntyped: true, path: packageJsonPath }
         }
         else {
             if (state.traceEnabled) {
@@ -663,14 +664,23 @@ namespace ts {
         }
 
         const file = loadModuleFromFile(combinePaths(candidate, "index"), extensions, failedLookupLocation, !directoryExists, state);
-        return file ? { isUntyped: false, path: file } : undefined
+        return file
+            ? { isUntyped: false, path: file }
+            : packageJsonExists
+            ? { isUntyped: true, path: packageJsonPath }
+            : undefined
     }
 
     function pathToPackageJson(directory: string): string {
         return combinePaths(directory, "package.json");
     }
 
-    type ResolvedModuleResult = { isUntyped: boolean, path: string } | undefined;
+    type ResolvedModuleResult = undefined | {
+        isUntyped: boolean,
+        path: string
+    };
+
+
 
     //Returns only the results for typed packages.
     function resultWithoutUntyped(result: ResolvedModuleResult): string | undefined {
@@ -689,29 +699,30 @@ namespace ts {
         const supportedExtensions = getSupportedExtensions(state.compilerOptions);
 
         const file = loadModuleFromFile(candidate, supportedExtensions, failedLookupLocations, !nodeModulesFolderExists, state);
-        if (file) {
-            return { isUntyped: false, path: file };
-        }
-        return loadNodeModuleFromDirectory(supportedExtensions, candidate, failedLookupLocations, !nodeModulesFolderExists, state);
+        return file
+            ? { isUntyped: false, path: file }
+            : loadNodeModuleFromDirectory(supportedExtensions, candidate, failedLookupLocations, !nodeModulesFolderExists, state);
     }
 
     //ugly
     function loadModuleFromNodeModulesNoPackageJson(
         moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState, checkOneLevel: boolean): string | undefined {
-        return resultWithoutUntyped(loadModuleFromNodeModules(moduleName, directory, failedLookupLocations, state, checkOneLevel));
+        return resultWithoutUntyped(loadModuleFromNodeModules(moduleName, directory, failedLookupLocations, state, checkOneLevel, /*allowUntyped*/ false));
     }
 
     /* @internal */
     //TODO: boolean flag to indicate whether we include package.json results.
-    export function loadModuleFromNodeModules(moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState, checkOneLevel: boolean): ResolvedModuleResult {
-        return loadModuleFromNodeModulesWorker(moduleName, directory, failedLookupLocations, state, checkOneLevel, /*typesOnly*/ false);
+    export function loadModuleFromNodeModules(moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState, checkOneLevel: boolean, allowUntyped: boolean): ResolvedModuleResult {
+        return loadModuleFromNodeModulesWorker(moduleName, directory, failedLookupLocations, state, checkOneLevel, /*typesOnly*/ false, allowUntyped);
     }
 
+    //duplicate of loadModuleFromNodeModulesNoPackageJson???
     function loadModuleFromNodeModulesAtTypes(moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState): string | undefined {
-        return resultWithoutUntyped(loadModuleFromNodeModulesWorker(moduleName, directory, failedLookupLocations, state, /*checkOneLevel*/ false, /*typesOnly*/ true));
+        return resultWithoutUntyped(loadModuleFromNodeModulesWorker(moduleName, directory, failedLookupLocations, state, /*checkOneLevel*/ false, /*typesOnly*/ true, /*allowUntyped*/ false));
     }
 
-    function loadModuleFromNodeModulesWorker(moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState, checkOneLevel: boolean, typesOnly: boolean): ResolvedModuleResult {
+    function loadModuleFromNodeModulesWorker(
+        moduleName: string, directory: string, failedLookupLocations: string[], state: ModuleResolutionState, checkOneLevel: boolean, typesOnly: boolean, allowUntyped: boolean): ResolvedModuleResult {
         directory = normalizeSlashes(directory);
         let foundPackageJson: string | undefined; //document: Whether a package.json was found anywhere in the search
         while (true) {
@@ -752,13 +763,7 @@ namespace ts {
             directory = parentPath;
         }
 
-        if (foundPackageJson) {
-            //TODO: pass allowUntyped as a flag to this function (get it from options.noImplicitAny)
-            return { isUntyped: true, path: foundPackageJson }
-        }
-        else {
-            return undefined;
-        }
+        return allowUntyped && foundPackageJson ? { isUntyped: true, path: foundPackageJson } : undefined;
     }
 
     export function classicNameResolver(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost): ResolvedModuleWithFailedLookupLocations {

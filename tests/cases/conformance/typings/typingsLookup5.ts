@@ -11,6 +11,12 @@
 
 // @filename: /a.ts
 import * as foo from "foo";
-foo.a;
+foo.bar();
 
+// @filename: /b.ts
+import foo = require("foo");
+foo();
 
+// @filename: /c.ts
+import foo, { bar } from "foo";
+foo(bar());
